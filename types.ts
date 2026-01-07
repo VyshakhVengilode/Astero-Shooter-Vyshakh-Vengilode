@@ -1,6 +1,8 @@
-
 import * as THREE from 'three';
 
+/**
+ * Global State for the React Application
+ */
 export interface GameState {
   score: number;
   level: number;
@@ -14,30 +16,37 @@ export interface GameState {
   keys: { [key: string]: boolean };
 }
 
+/**
+ * Persistence data for the leaderboard
+ */
 export interface LeaderboardEntry {
   name: string;
   score: number;
 }
 
-// Fix: Using intersection types ensures that all THREE.Mesh properties (including position, rotation, etc.) 
-// are correctly inherited and accessible on instances of Particle.
-export type Particle = THREE.Mesh & {
+/**
+ * Custom Particles
+ * We extend the THREE.Mesh type to ensure 'userData' is strictly typed
+ */
+export interface Particle extends THREE.Mesh {
   userData: {
     vel: THREE.Vector3;
     life: number;
   };
-};
+}
 
-// Fix: Using intersection types ensures that all THREE.Mesh properties (including position, rotation, etc.) 
-// are correctly inherited and accessible on instances of Asteroid.
-export type Asteroid = THREE.Mesh & {
+/**
+ * Custom Asteroids
+ * We add rotSpeed and radius to the userData for physics calculations
+ */
+export interface Asteroid extends THREE.Mesh {
   userData: {
     type: 'gold' | 'std';
     radius: number;
-    rotSpeed?: {
+    rotSpeed: {
       x: number;
       y: number;
       z: number;
     };
   };
-};
+}
