@@ -1,0 +1,7 @@
+{
+  "name": "Astero Shooter Ultra",
+  "description": "A high-octane 3D space shooter with procedural asteroid generation, dynamic combos, and an AI-powered mission debriefing system.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
