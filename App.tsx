@@ -1,17 +1,16 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
+import * as THREE from 'three'; 
 import Game from './components/Game';
 import HUD from './components/HUD';
 import GameOver from './components/GameOver';
 import { GameState, LeaderboardEntry } from './types';
-import * as THREE_LIB from 'three';
 
 const INITIAL_GAME_STATE: GameState = {
   score: 0,
   level: 1,
   lives: 3,
   active: true,
-  mouse: new THREE_LIB.Vector2(),
+  mouse: new THREE.Vector2(),
   speedMult: 1,
   powerup: 0,
   combo: 0,
@@ -25,10 +24,16 @@ export default function App() {
 
   useEffect(() => {
     const saved = localStorage.getItem('astero_leaderboard');
-    if (saved) setLeaderboard(JSON.parse(saved));
+    if (saved) {
+      try {
+        setLeaderboard(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse leaderboard", e);
+      }
+    }
   }, []);
 
-  const handleGameOver = useCallback((finalScore: number) => {
+  const handleGameOver = useCallback(() => {
     setGameState(prev => ({ ...prev, active: false }));
   }, []);
 
@@ -42,7 +47,7 @@ export default function App() {
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden select-none">
-      {/* Branding: Centered and responsive font sizes */}
+      {/* Branding */}
       <div className="absolute top-3 sm:top-6 left-0 w-full text-center z-20 pointer-events-none px-2 flex flex-col items-center">
         <h1 className="text-white text-lg xs:text-xl sm:text-3xl md:text-4xl lg:text-6xl font-black tracking-[0.1em] xs:tracking-[0.2em] drop-shadow-[0_0_15px_#00d2ff] uppercase leading-tight max-w-[80vw]">
           Astero Shooter
@@ -59,7 +64,7 @@ export default function App() {
         onGameOver={handleGameOver}
       />
 
-      {/* Responsive HUD */}
+      {/* UI Elements */}
       <HUD 
         score={gameState.score}
         level={gameState.level}
