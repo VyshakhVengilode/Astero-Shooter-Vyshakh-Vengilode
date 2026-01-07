@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { GameState, Asteroid, Particle } from '../types';
@@ -39,9 +38,10 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
   useEffect(() => { stateRef.current = gameState; }, [gameState]);
 
   const playSound = (freq: number, type: OscillatorType, dur: number, vol = 0.1) => {
-    if (!engineRef.current?.audioCtx) return;
+    const engine = engineRef.current;
+    if (!engine?.audioCtx) return;
     try {
-        const ctx = engineRef.current.audioCtx;
+        const ctx = engine.audioCtx;
         if (ctx.state === 'suspended') ctx.resume();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -53,12 +53,13 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
         gain.connect(ctx.destination);
         osc.start();
         osc.stop(ctx.currentTime + dur);
-    } catch (e) { console.error(e); }
+    } catch (e) { /* Audio fails silently to prevent crash */ }
   };
 
   const spawnExplosion = (pos: THREE.Vector3, color: number, count = 10) => {
-    if (!engineRef.current) return;
-    const { scene, particles } = engineRef.current;
+    const engine = engineRef.current;
+    if (!engine) return;
+    const { scene, particles } = engine;
     for (let i = 0; i < count; i++) {
       const p = new THREE.Mesh(
         new THREE.BoxGeometry(0.2, 0.2, 0.2),
@@ -82,20 +83,23 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Initialization
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1500);
     camera.position.set(0, 0, 12);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     containerRef.current.appendChild(renderer.domElement);
 
+    // Lights
     scene.add(new THREE.AmbientLight(0x4444ff, 0.4));
     const sun = new THREE.DirectionalLight(0xffffff, 1.5);
     sun.position.set(5, 15, 10);
     scene.add(sun);
 
+    // Starfield
     const starGeo = new THREE.BufferGeometry();
     const starPos = new Float32Array(CONFIG.starCount * 3);
     for (let i = 0; i < CONFIG.starCount * 3; i += 3) {
@@ -112,6 +116,7 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
     }));
     scene.add(starField);
 
+    // Ship
     const ship = new THREE.Group();
     const shipMat = new THREE.MeshStandardMaterial({ color: 0x00d2ff, metalness: 0.8, roughness: 0.2 });
     const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.4, 2.5, 8), shipMat);
@@ -127,6 +132,7 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
     ship.add(fuselage, wings, cockpit);
     scene.add(ship);
 
+    // Engine Reference Setup
     engineRef.current = {
       scene, camera, renderer, ship, starField,
       asteroids: [], bullets: [], diamonds: [], particles: [],
@@ -134,22 +140,27 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
     };
 
     const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      if (!containerRef.current) return;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(width, height);
     };
     window.addEventListener('resize', handleResize);
 
     const onMouseDown = () => {
-      if (!stateRef.current.active) return;
-      const { scene, bullets, ship } = engineRef.current!;
+      const engine = engineRef.current;
+      if (!stateRef.current.active || !engine) return;
+      
       const fireBullet = (offset: number) => {
         const b = new THREE.Mesh(new THREE.SphereGeometry(0.18), new THREE.MeshBasicMaterial({ color: 0xff3300 }));
-        b.position.copy(ship.position);
+        b.position.copy(engine.ship.position);
         b.position.x += offset;
-        scene.add(b);
-        bullets.push(b);
+        engine.scene.add(b);
+        engine.bullets.push(b);
       };
+
       if (stateRef.current.powerup > 0) { fireBullet(-0.6); fireBullet(0.6); } 
       else { fireBullet(0); }
       playSound(500, 'sine', 0.1, 0.05);
@@ -168,17 +179,18 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
 
     let frameId: number;
     const animate = () => {
-      if (!engineRef.current) return;
-      const { scene, camera, renderer, ship, asteroids, bullets, diamonds, particles, starField } = engineRef.current;
+      const engine = engineRef.current;
+      if (!engine) return;
+      
+      const { scene, camera, renderer, ship, asteroids, bullets, diamonds, particles, starField } = engine;
       const s = stateRef.current;
 
       if (s.active) {
-        // Calculate dynamic boundaries at Z=0 for responsiveness
+        // Responsiveness calculation
         const vFOV = THREE.MathUtils.degToRad(camera.fov);
         const visibleHeight = 2 * Math.tan(vFOV / 2) * camera.position.z;
         const visibleWidth = visibleHeight * camera.aspect;
         
-        // Move ship within visible world bounds (subtracting a bit for padding)
         const targetX = s.mouse.x * (visibleWidth / 2 - 2);
         const targetY = s.mouse.y * (visibleHeight / 2 - 2);
         const targetPos = new THREE.Vector3(targetX, targetY, 0);
@@ -187,12 +199,9 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
         ship.rotation.z = (ship.position.x - targetPos.x) * 0.1;
         ship.rotation.x = (targetPos.y - ship.position.y) * 0.08;
 
-        let speedMult = 1;
-        if (s.level >= 30) speedMult = 4.5;
-        else if (s.level >= 20) speedMult = 4;
-        else if (s.level >= 10) speedMult = 2;
-        const currentSpeed = CONFIG.baseSpeed * speedMult;
+        const currentSpeed = CONFIG.baseSpeed * (s.level >= 30 ? 4.5 : s.level >= 20 ? 4 : s.level >= 10 ? 2 : 1);
 
+        // Update Stars
         const starPosArr = starField.geometry.attributes.position.array as Float32Array;
         for (let i = 0; i < CONFIG.starCount; i++) {
           let zIdx = i * 3 + 2;
@@ -206,8 +215,9 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
         starField.geometry.attributes.position.needsUpdate = true;
 
         if (s.combo > 0 && Date.now() - s.lastHitTime > CONFIG.comboExpiry) onUpdate({ combo: 0 });
-        if (s.powerup > 0) onUpdate({ powerup: s.powerup - 0.016 });
+        if (s.powerup > 0) onUpdate({ powerup: Math.max(0, s.powerup - 0.016) });
 
+        // Spawning
         if (Math.random() < CONFIG.diamondSpawnRate) {
           const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.6, 0), new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, metalness: 1 }));
           d.position.set((Math.random() - 0.5) * (visibleWidth + 10), (Math.random() - 0.5) * (visibleHeight + 10), -120);
@@ -223,12 +233,15 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
             new THREE.MeshStandardMaterial({ color: isGold ? 0xffd700 : 0x777777, flatShading: true })
           ) as Asteroid;
           a.position.set((Math.random() - 0.5) * (visibleWidth + 20), (Math.random() - 0.5) * (visibleHeight + 15), -120);
-          a.userData = { type: isGold ? 'gold' : 'std', radius: size };
+          a.userData = { type: isGold ? 'gold' : 'std', radius: size, rotSpeed: { x: Math.random()*0.02, y: Math.random()*0.02, z: Math.random()*0.02 } };
           scene.add(a);
           asteroids.push(a);
         }
 
-        diamonds.forEach((d, i) => {
+        // --- FIXED COLLISION LOOPS (Using reverse iteration to avoid index skipping) ---
+
+        for (let i = diamonds.length - 1; i >= 0; i--) {
+          const d = diamonds[i];
           d.position.z += currentSpeed;
           d.rotation.y += 0.05;
           if (d.position.distanceTo(ship.position) < 2.0) {
@@ -236,18 +249,24 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
             spawnExplosion(d.position, 0x00ffff, 15);
             scene.remove(d); diamonds.splice(i, 1);
             playSound(900, 'sine', 0.4);
-            return;
+          } else if (d.position.z > 20) {
+            scene.remove(d); diamonds.splice(i, 1);
           }
-          if (d.position.z > 20) { scene.remove(d); diamonds.splice(i, 1); }
-        });
+        }
 
-        bullets.forEach((b, i) => {
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i];
           b.position.z -= CONFIG.bulletSpeed;
-          if (b.position.z < -130) { scene.remove(b); bullets.splice(i, 1); }
-        });
+          if (b.position.z < -130) {
+            scene.remove(b); bullets.splice(i, 1);
+          }
+        }
 
-        asteroids.forEach((a, i) => {
+        for (let i = asteroids.length - 1; i >= 0; i--) {
+          const a = asteroids[i];
           a.position.z += currentSpeed;
+          
+          // Collision with Ship
           if (a.position.distanceTo(ship.position) < a.userData.radius + 0.6) {
             if (a.userData.type === 'gold') {
               onUpdate({ score: s.score + 500, combo: s.combo + 1, lastHitTime: Date.now() });
@@ -259,27 +278,35 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
               if (newLives <= 0) onGameOver(s.score);
             }
             scene.remove(a); asteroids.splice(i, 1);
-            return;
+            continue;
           }
-          bullets.forEach((b, bi) => {
+
+          // Collision with Bullets
+          for (let j = bullets.length - 1; j >= 0; j--) {
+            const b = bullets[j];
             if (a.position.distanceTo(b.position) < a.userData.radius + 0.4) {
               const currentCombo = s.combo + 1;
               const hitScore = (a.userData.type === 'gold' ? 500 : 100) * Math.max(1, currentCombo);
               onUpdate({ score: s.score + hitScore, combo: currentCombo, lastHitTime: Date.now(), level: Math.floor((s.score + hitScore) / 1000) + 1 });
               spawnExplosion(a.position, a.userData.type === 'gold' ? 0xffd700 : 0xcccccc);
               scene.remove(a); asteroids.splice(i, 1);
-              scene.remove(b); bullets.splice(bi, 1);
+              scene.remove(b); bullets.splice(j, 1);
+              break; 
             }
-          });
-          if (a.position.z > 20) { scene.remove(a); asteroids.splice(i, 1); }
-        });
+          }
 
-        particles.forEach((p, i) => {
+          if (a && a.position.z > 20) {
+            scene.remove(a); asteroids.splice(i, 1);
+          }
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
           p.position.add(p.userData.vel);
           p.userData.life -= 0.03;
           p.scale.setScalar(Math.max(0.001, p.userData.life));
           if (p.userData.life <= 0) { scene.remove(p); particles.splice(i, 1); }
-        });
+        }
       }
 
       renderer.render(scene, camera);
@@ -293,7 +320,9 @@ const Game: React.FC<GameProps> = ({ gameState, onUpdate, onGameOver }) => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onMouseMove);
-      if (engineRef.current?.renderer) engineRef.current.renderer.dispose();
+      if (engineRef.current?.renderer) {
+        engineRef.current.renderer.dispose();
+      }
     };
   }, []);
 
